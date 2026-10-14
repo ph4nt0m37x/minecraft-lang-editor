@@ -2,6 +2,7 @@ import { useRef, useState, type ChangeEvent } from 'react'
 import './App.css'
 
 type ColorRange = { start: number; end: number; color: string }
+type StyleRange = { start: number; end: number }
 
 type ExtraLine = {
   id: number
@@ -10,6 +11,8 @@ type ExtraLine = {
   bold: boolean
   italic: boolean
   colorRanges: ColorRange[]
+  boldRanges: StyleRange[]
+  italicRanges: StyleRange[]
 }
 
 type Translation = {
@@ -18,7 +21,11 @@ type Translation = {
   key: string
   title: string
   titleColor: string
+  titleBold: boolean
+  titleItalic: boolean
   titleColorRanges: ColorRange[]
+  titleBoldRanges: StyleRange[]
+  titleItalicRanges: StyleRange[]
   extraLines: ExtraLine[]
 }
 
@@ -62,43 +69,84 @@ const colorHex: Record<string, string> = {
   '§f': '#FFFFFF',
 }
 
+function getTextParts(
+    text: string,
+    defaultColor: string,
+    colorRanges: ColorRange[],
+    bold = false,
+    italic = false,
+    boldRanges: StyleRange[] = [],
+    italicRanges: StyleRange[] = [],
+) {
+  const parts: { text: string; color: string; bold: boolean; italic: boolean }[] = []
+  for (let i = 0; i < text.length;) {
+    const colorRange = colorRanges.find((r) => i >= r.start && i < r.end)
+    const isBold = bold || boldRanges.some((r) => i >= r.start && i < r.end)
+    const isItalic = italic || italicRanges.some((r) => i >= r.start && i < r.end)
+    const color = colorRange?.color || defaultColor
+    let end = i + 1
+    while (end < text.length) {
+      const nextColorRange = colorRanges.find((r) => end >= r.start && end < r.end)
+      const nextColor = nextColorRange?.color || defaultColor
+      const nextBold = bold || boldRanges.some((r) => end >= r.start && end < r.end)
+      const nextItalic = italic || italicRanges.some((r) => end >= r.start && end < r.end)
+      if (nextColor !== color || nextBold !== isBold || nextItalic !== isItalic) break
+      end++
+    }
+    parts.push({ text: text.slice(i, end), color, bold: isBold, italic: isItalic })
+    i = end
+  }
+  return parts
+}
+
 function renderTextWithRanges(
     text: string,
     defaultColor: string,
-    ranges: ColorRange[],
+    colorRanges: ColorRange[],
     bold = false,
     italic = false,
+    boldRanges: StyleRange[] = [],
+    italicRanges: StyleRange[] = [],
 ) {
-  const sorted = [...ranges].filter((range) => range.end > range.start).sort((a, b) => a.start - b.start)
-  const parts: { text: string; color: string }[] = []
-  let position = 0
-  for (const range of sorted) {
-    const start = Math.max(position, Math.min(text.length, range.start))
-    const end = Math.max(start, Math.min(text.length, range.end))
-    if (start > position) parts.push({ text: text.slice(position, start), color: defaultColor })
-    if (end > start) parts.push({ text: text.slice(start, end), color: range.color || defaultColor })
-    position = end
-  }
-  if (position < text.length) parts.push({ text: text.slice(position), color: defaultColor })
-  return parts.map((part, index) => (
-      <span key={index} style={{ color: colorHex[part.color] ?? '#eeeeee', fontWeight: bold ? 'bold' : 'normal', fontStyle: italic ? 'italic' : 'normal' }}>{part.text}</span>
+  return getTextParts(text, defaultColor, colorRanges, bold, italic, boldRanges, italicRanges).map((part, index) => (
+      <span key={index} style={{ color: colorHex[part.color] ?? '#eeeeee', fontWeight: part.bold ? 'bold' : 'normal', fontStyle: part.italic ? 'italic' : 'normal' }}>{part.text}</span>
   ))
 }
 
-function buildTextWithRanges(text: string, defaultColor: string, ranges: ColorRange[], bold = false, italic = false) {
-  const sorted = [...ranges].filter((range) => range.end > range.start).sort((a, b) => a.start - b.start)
-  let output = ''
-  let position = 0
-  const style = `${bold ? '§l' : ''}${italic ? '§o' : ''}`
-  for (const range of sorted) {
-    const start = Math.max(position, Math.min(text.length, range.start))
-    const end = Math.max(start, Math.min(text.length, range.end))
-    if (start > position) output += `${defaultColor}${style}${text.slice(position, start)}`
-    if (end > start) output += `${range.color || '§r'}${style}${text.slice(start, end)}${defaultColor || '§r'}${style}`
-    position = end
-  }
-  if (position < text.length) output += `${defaultColor}${style}${text.slice(position)}`
-  return output
+function buildTextWithRanges(
+    text: string,
+    defaultColor: string,
+    colorRanges: ColorRange[],
+    bold = false,
+    italic = false,
+    boldRanges: StyleRange[] = [],
+    italicRanges: StyleRange[] = [],
+) {
+  return getTextParts(text, defaultColor, colorRanges, bold, italic, boldRanges, italicRanges)
+      .map((part) => `${part.color || '§r'}${part.bold ? '§l' : ''}${part.italic ? '§o' : ''}${part.text}`)
+      .join('')
+}
+
+function applyStyleToSelection(
+    fieldId: string,
+    ranges: StyleRange[],
+    updateRanges: (ranges: StyleRange[]) => void,
+    selections: Record<string, { start: number; end: number }>,
+) {
+  const selection = selections[fieldId]
+  if (!selection || selection.start === selection.end) return false
+  const { start, end } = selection
+  const isAlreadyStyled = ranges.some((range) => range.start <= start && range.end >= end)
+  const nextRanges = ranges.flatMap((range) => {
+    if (range.end <= start || range.start >= end) return [range]
+    const pieces: StyleRange[] = []
+    if (range.start < start) pieces.push({ start: range.start, end: start })
+    if (range.end > end) pieces.push({ start: end, end: range.end })
+    return pieces
+  })
+  if (!isAlreadyStyled) nextRanges.push({ start, end })
+  updateRanges(nextRanges.sort((a, b) => a.start - b.start))
+  return true
 }
 
 function adjustRangesForEdit(oldText: string, newText: string, ranges: ColorRange[]) {
@@ -124,7 +172,11 @@ function createTranslation(): Translation {
     key: '',
     title: '',
     titleColor: '',
+    titleBold: false,
+    titleItalic: false,
     titleColorRanges: [],
+    titleBoldRanges: [],
+    titleItalicRanges: [],
     extraLines: [],
   }
 }
@@ -137,6 +189,8 @@ function createExtraLine(): ExtraLine {
     bold: false,
     italic: false,
     colorRanges: [],
+    boldRanges: [],
+    italicRanges: [],
   }
 }
 
@@ -200,7 +254,7 @@ function parseLangFile(contents: string): Translation[] {
 
     // This editor's format uses the literal characters \\n between text segments.
     const segments = value.split('\\n')
-    const title = parseSegment(segments.shift() ?? '', false)
+    const title = parseSegment(segments.shift() ?? '', true)
 
     const extraLines: ExtraLine[] = segments.map((segment) => {
       const parsedSegment = parseSegment(segment, true)
@@ -211,6 +265,8 @@ function parseLangFile(contents: string): Translation[] {
         bold: parsedSegment.bold,
         italic: parsedSegment.italic,
         colorRanges: [],
+        boldRanges: [],
+        italicRanges: [],
       }
     })
 
@@ -220,7 +276,11 @@ function parseLangFile(contents: string): Translation[] {
       key,
       title: title.text,
       titleColor: title.color,
+      titleBold: title.bold,
+      titleItalic: title.italic,
       titleColorRanges: [],
+      titleBoldRanges: [],
+      titleItalicRanges: [],
       extraLines,
     })
 
@@ -344,12 +404,12 @@ function App() {
               ? `${item.comment.trim().split('\n').map((line) => `# ${line}`).join('\n')}\n`
               : ''
 
-          const title = buildTextWithRanges(item.title, item.titleColor, item.titleColorRanges)
+          const title = buildTextWithRanges(item.title, item.titleColor, item.titleColorRanges, item.titleBold, item.titleItalic, item.titleBoldRanges, item.titleItalicRanges)
 
           const extra = item.extraLines
               .filter((line) => line.text.length > 0)
               .map((line) =>
-                  buildTextWithRanges(line.text, line.color, line.colorRanges, line.bold, line.italic),
+                  buildTextWithRanges(line.text, line.color, line.colorRanges, line.bold, line.italic, line.boldRanges, line.italicRanges),
               )
 
           return `${comment}${item.key.trim()}=${[title, ...extra].join('\\n')}`
@@ -476,7 +536,7 @@ function App() {
                         onKeyUp={(event) => rememberSelection(`title-${translation.id}`, event.currentTarget)}
                         onChange={(event) => {
                           const newText = event.target.value
-                          updateTranslation(translation.id, { title: newText, titleColorRanges: adjustRangesForEdit(translation.title, newText, translation.titleColorRanges) })
+                          updateTranslation(translation.id, { title: newText, titleColorRanges: adjustRangesForEdit(translation.title, newText, translation.titleColorRanges), titleBoldRanges: adjustRangesForEdit(translation.title, newText, translation.titleBoldRanges), titleItalicRanges: adjustRangesForEdit(translation.title, newText, translation.titleItalicRanges) })
                           rememberSelection(`title-${translation.id}`, event.currentTarget)
                         }}
                         placeholder="Mystical Ruby"
@@ -500,13 +560,30 @@ function App() {
                           </option>
                       ))}
                     </select>
+                    <button
+                        type="button"
+                        className={`style-button ${translation.titleBold ? 'active' : ''}`}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          const applied = applyStyleToSelection(`title-${translation.id}`, translation.titleBoldRanges, (titleBoldRanges) => updateTranslation(translation.id, { titleBoldRanges }), textSelections.current)
+                          if (!applied) updateTranslation(translation.id, { titleBold: !translation.titleBold })
+                        }}
+                        title="Toggle title bold"
+                        aria-label="Toggle title bold"
+                    >B</button>
+                    <button
+                        type="button"
+                        className={`style-button italic ${translation.titleItalic ? 'active' : ''}`}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          const applied = applyStyleToSelection(`title-${translation.id}`, translation.titleItalicRanges, (titleItalicRanges) => updateTranslation(translation.id, { titleItalicRanges }), textSelections.current)
+                          if (!applied) updateTranslation(translation.id, { titleItalic: !translation.titleItalic })
+                        }}
+                        title="Toggle title italic"
+                        aria-label="Toggle title italic"
+                    >I</button>
                   </div>
-                  <div className="minecraft-preview">
-                    {translation.title
-                        ? renderTextWithRanges(translation.title, translation.titleColor, translation.titleColorRanges)
-                        : <span style={{ color: colorHex[translation.titleColor] }}>Your title preview</span>}
-                  </div>
-                  <p className="format-hint">Select text, then choose a color. Formatting stays invisible while you edit.</p>
+                  <p className="format-hint">Select part of the text, then choose a color. Select text and use B/I for that selection, or use them with no selection for the whole line. Formatting codes stay invisible while you edit.</p>
                 </div>
 
                 <div className="extras-heading">
@@ -526,7 +603,7 @@ function App() {
                           onKeyUp={(event) => rememberSelection(`line-${line.id}`, event.currentTarget)}
                           onChange={(event) => {
                             const newText = event.target.value
-                            updateExtraLine(translation, line.id, { text: newText, colorRanges: adjustRangesForEdit(line.text, newText, line.colorRanges) })
+                            updateExtraLine(translation, line.id, { text: newText, colorRanges: adjustRangesForEdit(line.text, newText, line.colorRanges), boldRanges: adjustRangesForEdit(line.text, newText, line.boldRanges), italicRanges: adjustRangesForEdit(line.text, newText, line.italicRanges) })
                             rememberSelection(`line-${line.id}`, event.currentTarget)
                           }}
                           placeholder="Makes you stronger"
@@ -552,11 +629,11 @@ function App() {
                       </select>
                       <button
                           className={`style-button ${line.bold ? 'active' : ''}`}
-                          onClick={() =>
-                              updateExtraLine(translation, line.id, {
-                                bold: !line.bold,
-                              })
-                          }
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            const applied = applyStyleToSelection(`line-${line.id}`, line.boldRanges, (boldRanges) => updateExtraLine(translation, line.id, { boldRanges }), textSelections.current)
+                            if (!applied) updateExtraLine(translation, line.id, { bold: !line.bold })
+                          }}
                           title="Toggle bold"
                           aria-label="Toggle bold"
                       >
@@ -564,11 +641,11 @@ function App() {
                       </button>
                       <button
                           className={`style-button italic ${line.italic ? 'active' : ''}`}
-                          onClick={() =>
-                              updateExtraLine(translation, line.id, {
-                                italic: !line.italic,
-                              })
-                          }
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            const applied = applyStyleToSelection(`line-${line.id}`, line.italicRanges, (italicRanges) => updateExtraLine(translation, line.id, { italicRanges }), textSelections.current)
+                            if (!applied) updateExtraLine(translation, line.id, { italic: !line.italic })
+                          }}
                           title="Toggle italic"
                           aria-label="Toggle italic"
                       >
@@ -588,12 +665,7 @@ function App() {
                       >
                         ×
                       </button>
-                      <div className="minecraft-preview extra-preview">
-                        {line.text
-                            ? renderTextWithRanges(line.text, line.color, line.colorRanges, line.bold, line.italic)
-                            : <span style={{ color: colorHex[line.color], fontWeight: line.bold ? 'bold' : 'normal', fontStyle: line.italic ? 'italic' : 'normal' }}>Your text preview</span>}
-                      </div>
-                      <p className="format-hint extra-hint">Select text, then choose a color. Formatting stays invisible while you edit.</p>
+
                     </div>
                 ))}
 
@@ -611,26 +683,43 @@ function App() {
                   + Add text line
                 </button>
 
-                <div className="output-preview">
-                  <div className="preview-label">GENERATED ENTRY</div>
-                  <code>
-                    {translation.comment && (
-                        <span>{`${translation.comment.split('\n').map((line) => `# ${line}`).join('\n')}\n`}</span>
-                    )}
-                    <span>{translation.key || 'your.translation.key'}</span>
-                    <span>=</span>
-                    <span>
-                  {buildTextWithRanges(translation.title, translation.titleColor, translation.titleColorRanges)}
-                </span>
-                    {translation.extraLines
-                        .filter((line) => line.text.length > 0)
-                        .map((line) => (
-                            <span key={line.id}>
-                      {'\\n'}
-                              {buildTextWithRanges(line.text, line.color, line.colorRanges, line.bold, line.italic)}
-                    </span>
-                        ))}
-                  </code>
+                <div className="output-panels">
+                  <div className="output-preview">
+                    <div className="preview-label">GENERATED ENTRY</div>
+                    <code>
+                      {translation.comment && (
+                          <span>{`${translation.comment.split('\n').map((line) => `# ${line}`).join('\n')}\n`}</span>
+                      )}
+                      <span>{translation.key || 'your.translation.key'}</span>
+                      <span>=</span>
+                      <span>{buildTextWithRanges(translation.title, translation.titleColor, translation.titleColorRanges, translation.titleBold, translation.titleItalic, translation.titleBoldRanges, translation.titleItalicRanges)}</span>
+                      {translation.extraLines
+                          .filter((line) => line.text.length > 0)
+                          .map((line) => (
+                              <span key={line.id}>
+                                {'\\n'}
+                                {buildTextWithRanges(line.text, line.color, line.colorRanges, line.bold, line.italic, line.boldRanges, line.italicRanges)}
+                              </span>
+                          ))}
+                    </code>
+                  </div>
+                  <div className="rendered-entry-preview">
+                    <div className="preview-label">IN-GAME PREVIEW</div>
+                    <div className="rendered-lines">
+                      <div className="rendered-line rendered-title">
+                        {translation.title
+                            ? renderTextWithRanges(translation.title, translation.titleColor, translation.titleColorRanges, translation.titleBold, translation.titleItalic, translation.titleBoldRanges, translation.titleItalicRanges)
+                            : <span className="preview-placeholder">Your title preview</span>}
+                      </div>
+                      {translation.extraLines.map((line) => (
+                          <div className="rendered-line" key={line.id}>
+                            {line.text
+                                ? renderTextWithRanges(line.text, line.color, line.colorRanges, line.bold, line.italic, line.boldRanges, line.italicRanges)
+                                : <span className="preview-placeholder">Additional text preview</span>}
+                          </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </article>
           ))}

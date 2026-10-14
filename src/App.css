@@ -207,8 +207,8 @@ h2 {
   background: #0b0c10;
   border: 1px solid #292a33;
   border-radius: 8px;
-  font-family: monospace;
-  font-size: 14px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 24px;
   overflow-wrap: anywhere;
 }
 
@@ -395,7 +395,48 @@ h4 {
     line-height: 1.5;
   }
 
-  .extra-hint {
-    grid-column: 1 / -1;
-    margin-top: -2px;
-  }
+/* Title controls: text, color, bold, italic */
+.text-controls {
+  grid-template-columns: minmax(0, 1fr) 120px 36px 36px;
+}
+
+/* Show the generated .lang entry beside one combined visual preview */
+.output-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.output-panels .output-preview {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.rendered-entry-preview {
+  min-width: 0;
+  padding: 15px;
+  background: #101116;
+  border: 1px solid #292a33;
+  border-radius: 9px;
+}
+
+.rendered-lines {
+  min-height: 100px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: #0b0c10;
+  border: 1px solid #292a33;
+  border-radius: 8px;
+}
+
+.rendered-line {
+  font-family: "Press Start 2P", monospace;
+  font-size: 16px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
