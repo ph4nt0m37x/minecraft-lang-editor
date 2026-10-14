@@ -247,7 +247,7 @@ function App() {
   }
 
   function applyColorToSelection(
-      fieldId: string, text: string, chosenColor: string, ranges: ColorRange[],
+      fieldId: string, _text: string, chosenColor: string, ranges: ColorRange[],
       updateRanges: (ranges: ColorRange[]) => void,
   ) {
     const selection = textSelections.current[fieldId]
