@@ -1,5 +1,4 @@
-
-import { useState } from 'react'
+import { useRef, useState, type ChangeEvent } from 'react'
 import './App.css'
 
 type ExtraLine = {
@@ -91,8 +90,98 @@ function formatText(
   return `${color}${bold ? '§l' : ''}${italic ? '§o' : ''}${text}`
 }
 
+// Reads formatting codes at the beginning of a segment.
+// Any codes later in the text are left untouched so exporting won't silently remove them.
+function parseSegment(raw: string, allowStyles: boolean) {
+  let remaining = raw
+  let color = ''
+  let bold = false
+  let italic = false
+
+  while (remaining.startsWith('§') && remaining.length >= 2) {
+    const code = remaining.slice(0, 2).toLowerCase()
+
+    if (colors.some((item) => item.code === code && code !== '')) {
+      color = code
+      remaining = remaining.slice(2)
+      continue
+    }
+
+    if (allowStyles && code === '§l') {
+      bold = true
+      remaining = remaining.slice(2)
+      continue
+    }
+
+    if (allowStyles && code === '§o') {
+      italic = true
+      remaining = remaining.slice(2)
+      continue
+    }
+
+    // Leave unsupported or inline formatting codes in the text.
+    break
+  }
+
+  return { text: remaining, color, bold, italic }
+}
+
+function parseLangFile(contents: string): Translation[] {
+  const parsed: Translation[] = []
+  const pendingComments: string[] = []
+
+  for (const rawLine of contents.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+    const line = rawLine.trim()
+
+    if (!line) continue
+
+    if (line.startsWith('#')) {
+      pendingComments.push(line.slice(1).trimStart())
+      continue
+    }
+
+    const equalsIndex = rawLine.indexOf('=')
+    if (equalsIndex < 0) continue
+
+    const key = rawLine.slice(0, equalsIndex).trim()
+    const value = rawLine.slice(equalsIndex + 1)
+
+    if (!key) continue
+
+    // This editor's format uses the literal characters \\n between text segments.
+    const segments = value.split('\\n')
+    const title = parseSegment(segments.shift() ?? '', false)
+
+    const extraLines: ExtraLine[] = segments.map((segment) => {
+      const parsedSegment = parseSegment(segment, true)
+      return {
+        id: nextId++,
+        text: parsedSegment.text,
+        color: parsedSegment.color,
+        bold: parsedSegment.bold,
+        italic: parsedSegment.italic,
+      }
+    })
+
+    parsed.push({
+      id: nextId++,
+      comment: pendingComments.join('\n'),
+      key,
+      title: title.text,
+      titleColor: title.color,
+      extraLines,
+    })
+
+    pendingComments.length = 0
+  }
+
+  return parsed
+}
+
 function App() {
   const [fileName, setFileName] = useState('en_US')
+  const [importMessage, setImportMessage] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [translations, setTranslations] = useState<Translation[]>([
     createTranslation(),
   ])
@@ -130,12 +219,50 @@ function App() {
     })
   }
 
+  async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const hasExistingContent = translations.some((item) =>
+        item.key.trim() ||
+        item.title.trim() ||
+        item.comment.trim() ||
+        item.extraLines.some((line) => line.text.trim()),
+    )
+
+    if (
+        hasExistingContent &&
+        !window.confirm('Importing a file will replace the entries currently in the editor. Continue?')
+    ) {
+      event.target.value = ''
+      return
+    }
+
+    try {
+      const contents = await file.text()
+      const parsed = parseLangFile(contents)
+
+      if (parsed.length === 0) {
+        setImportMessage('No translations were found. Check that the file uses key=value entries.')
+        return
+      }
+
+      setTranslations(parsed)
+      setFileName(file.name.replace(/\.lang$/i, '') || 'en_US')
+      setImportMessage(`Imported ${parsed.length} ${parsed.length === 1 ? 'entry' : 'entries'} from ${file.name}.`)
+    } catch {
+      setImportMessage('Could not read that file. Please try another .lang file.')
+    } finally {
+      event.target.value = ''
+    }
+  }
+
   function generateFile() {
     const output = translations
         .filter((item) => item.key.trim())
         .map((item) => {
           const comment = item.comment.trim()
-              ? `# ${item.comment.trim()}\n`
+              ? `${item.comment.trim().split('\n').map((line) => `# ${line}`).join('\n')}\n`
               : ''
 
           const title = formatText(item.title, item.titleColor)
@@ -181,6 +308,26 @@ function App() {
             />
             <span>.lang</span>
           </div>
+        </section>
+
+        <section className="import-control">
+          <input
+              ref={fileInputRef}
+              type="file"
+              accept=".lang,text/plain"
+              onChange={handleImportFile}
+              style={{ display: 'none' }}
+          />
+          <button
+              className="add-translation-button"
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+          >
+            ↑ Import .lang file
+          </button>
+          <p className="import-status">
+            {importMessage || 'Open an existing .lang file to edit its entries.'}
+          </p>
         </section>
 
         <div className="section-heading">
@@ -305,7 +452,7 @@ function App() {
                               })
                           }
                       >
-                        {colors.filter((color) => color.code !== '').map((color) => (
+                        {colors.map((color) => (
                             <option key={color.code} value={color.code}>
                               {color.name}
                             </option>
@@ -381,7 +528,7 @@ function App() {
                   <div className="preview-label">GENERATED ENTRY</div>
                   <code>
                     {translation.comment && (
-                        <span>{`# ${translation.comment}\n`}</span>
+                        <span>{`${translation.comment.split('\n').map((line) => `# ${line}`).join('\n')}\n`}</span>
                     )}
                     <span>{translation.key || 'your.translation.key'}</span>
                     <span>=</span>
