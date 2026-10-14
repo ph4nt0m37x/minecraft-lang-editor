@@ -148,8 +148,12 @@ function applyStyleToSelection(
   updateRanges(nextRanges.sort((a, b) => a.start - b.start))
   return true
 }
+function adjustRangesForEdit<T extends { start: number; end: number }>(
+    oldText: string,
+    newText: string,
+    ranges: T[],
+): T[] {
 
-function adjustRangesForEdit(oldText: string, newText: string, ranges: ColorRange[]) {
   let prefix = 0
   while (prefix < oldText.length && prefix < newText.length && oldText[prefix] === newText[prefix]) prefix++
   let suffix = 0
