@@ -382,5 +382,20 @@ h4 {
 
   .generate-button {
     width: 100%;
+
   }
 }
+
+
+  /* Selection-based Minecraft text formatting */
+  .format-hint {
+    margin: 8px 0 0;
+    color: #858897;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .extra-hint {
+    grid-column: 1 / -1;
+    margin-top: -2px;
+  }

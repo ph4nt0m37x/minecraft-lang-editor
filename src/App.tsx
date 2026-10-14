@@ -1,12 +1,15 @@
 import { useRef, useState, type ChangeEvent } from 'react'
 import './App.css'
 
+type ColorRange = { start: number; end: number; color: string }
+
 type ExtraLine = {
   id: number
   text: string
   color: string
   bold: boolean
   italic: boolean
+  colorRanges: ColorRange[]
 }
 
 type Translation = {
@@ -15,6 +18,7 @@ type Translation = {
   key: string
   title: string
   titleColor: string
+  titleColorRanges: ColorRange[]
   extraLines: ExtraLine[]
 }
 
@@ -58,6 +62,59 @@ const colorHex: Record<string, string> = {
   '§f': '#FFFFFF',
 }
 
+function renderTextWithRanges(
+    text: string,
+    defaultColor: string,
+    ranges: ColorRange[],
+    bold = false,
+    italic = false,
+) {
+  const sorted = [...ranges].filter((range) => range.end > range.start).sort((a, b) => a.start - b.start)
+  const parts: { text: string; color: string }[] = []
+  let position = 0
+  for (const range of sorted) {
+    const start = Math.max(position, Math.min(text.length, range.start))
+    const end = Math.max(start, Math.min(text.length, range.end))
+    if (start > position) parts.push({ text: text.slice(position, start), color: defaultColor })
+    if (end > start) parts.push({ text: text.slice(start, end), color: range.color || defaultColor })
+    position = end
+  }
+  if (position < text.length) parts.push({ text: text.slice(position), color: defaultColor })
+  return parts.map((part, index) => (
+      <span key={index} style={{ color: colorHex[part.color] ?? '#eeeeee', fontWeight: bold ? 'bold' : 'normal', fontStyle: italic ? 'italic' : 'normal' }}>{part.text}</span>
+  ))
+}
+
+function buildTextWithRanges(text: string, defaultColor: string, ranges: ColorRange[], bold = false, italic = false) {
+  const sorted = [...ranges].filter((range) => range.end > range.start).sort((a, b) => a.start - b.start)
+  let output = ''
+  let position = 0
+  const style = `${bold ? '§l' : ''}${italic ? '§o' : ''}`
+  for (const range of sorted) {
+    const start = Math.max(position, Math.min(text.length, range.start))
+    const end = Math.max(start, Math.min(text.length, range.end))
+    if (start > position) output += `${defaultColor}${style}${text.slice(position, start)}`
+    if (end > start) output += `${range.color || '§r'}${style}${text.slice(start, end)}${defaultColor || '§r'}${style}`
+    position = end
+  }
+  if (position < text.length) output += `${defaultColor}${style}${text.slice(position)}`
+  return output
+}
+
+function adjustRangesForEdit(oldText: string, newText: string, ranges: ColorRange[]) {
+  let prefix = 0
+  while (prefix < oldText.length && prefix < newText.length && oldText[prefix] === newText[prefix]) prefix++
+  let suffix = 0
+  while (suffix < oldText.length - prefix && suffix < newText.length - prefix && oldText[oldText.length - 1 - suffix] === newText[newText.length - 1 - suffix]) suffix++
+  const oldChangedEnd = oldText.length - suffix
+  const delta = newText.length - oldText.length
+  return ranges.flatMap((range) => {
+    if (range.end <= prefix) return [range]
+    if (range.start >= oldChangedEnd) return [{ ...range, start: range.start + delta, end: range.end + delta }]
+    return []
+  })
+}
+
 let nextId = 1
 
 function createTranslation(): Translation {
@@ -67,6 +124,7 @@ function createTranslation(): Translation {
     key: '',
     title: '',
     titleColor: '',
+    titleColorRanges: [],
     extraLines: [],
   }
 }
@@ -78,16 +136,8 @@ function createExtraLine(): ExtraLine {
     color: '§7',
     bold: false,
     italic: false,
+    colorRanges: [],
   }
-}
-
-function formatText(
-    text: string,
-    color: string,
-    bold = false,
-    italic = false,
-) {
-  return `${color}${bold ? '§l' : ''}${italic ? '§o' : ''}${text}`
 }
 
 // Reads formatting codes at the beginning of a segment.
@@ -160,6 +210,7 @@ function parseLangFile(contents: string): Translation[] {
         color: parsedSegment.color,
         bold: parsedSegment.bold,
         italic: parsedSegment.italic,
+        colorRanges: [],
       }
     })
 
@@ -169,6 +220,7 @@ function parseLangFile(contents: string): Translation[] {
       key,
       title: title.text,
       titleColor: title.color,
+      titleColorRanges: [],
       extraLines,
     })
 
@@ -181,10 +233,37 @@ function parseLangFile(contents: string): Translation[] {
 function App() {
   const [fileName, setFileName] = useState('en_US')
   const [importMessage, setImportMessage] = useState('')
+  const [selectionColors, setSelectionColors] = useState<Record<string, string>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [translations, setTranslations] = useState<Translation[]>([
     createTranslation(),
   ])
+
+  const textInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const textSelections = useRef<Record<string, { start: number; end: number }>>({})
+
+  function rememberSelection(fieldId: string, input: HTMLInputElement) {
+    textSelections.current[fieldId] = { start: input.selectionStart ?? 0, end: input.selectionEnd ?? 0 }
+  }
+
+  function applyColorToSelection(
+      fieldId: string, text: string, chosenColor: string, ranges: ColorRange[],
+      updateRanges: (ranges: ColorRange[]) => void,
+  ) {
+    const selection = textSelections.current[fieldId]
+    if (!selection || selection.start === selection.end) return false
+    const { start, end } = selection
+    const nextRanges = ranges.flatMap((range) => {
+      if (range.end <= start || range.start >= end) return [range]
+      const pieces: ColorRange[] = []
+      if (range.start < start) pieces.push({ ...range, end: start })
+      if (range.end > end) pieces.push({ ...range, start: end })
+      return pieces
+    })
+    if (chosenColor) nextRanges.push({ start, end, color: chosenColor })
+    updateRanges(nextRanges.sort((a, b) => a.start - b.start))
+    return true
+  }
 
   function updateTranslation(
       id: number,
@@ -265,12 +344,12 @@ function App() {
               ? `${item.comment.trim().split('\n').map((line) => `# ${line}`).join('\n')}\n`
               : ''
 
-          const title = formatText(item.title, item.titleColor)
+          const title = buildTextWithRanges(item.title, item.titleColor, item.titleColorRanges)
 
           const extra = item.extraLines
               .filter((line) => line.text.length > 0)
               .map((line) =>
-                  formatText(line.text, line.color, line.bold, line.italic),
+                  buildTextWithRanges(line.text, line.color, line.colorRanges, line.bold, line.italic),
               )
 
           return `${comment}${item.key.trim()}=${[title, ...extra].join('\\n')}`
@@ -390,22 +469,30 @@ function App() {
                   <label>TITLE / MAIN TEXT</label>
                   <div className="text-controls">
                     <input
+                        ref={(element) => { textInputRefs.current[`title-${translation.id}`] = element }}
                         value={translation.title}
-                        onChange={(event) =>
-                            updateTranslation(translation.id, {
-                              title: event.target.value,
-                            })
-                        }
+                        onSelect={(event) => rememberSelection(`title-${translation.id}`, event.currentTarget)}
+                        onClick={(event) => rememberSelection(`title-${translation.id}`, event.currentTarget)}
+                        onKeyUp={(event) => rememberSelection(`title-${translation.id}`, event.currentTarget)}
+                        onChange={(event) => {
+                          const newText = event.target.value
+                          updateTranslation(translation.id, { title: newText, titleColorRanges: adjustRangesForEdit(translation.title, newText, translation.titleColorRanges) })
+                          rememberSelection(`title-${translation.id}`, event.currentTarget)
+                        }}
                         placeholder="Mystical Ruby"
                     />
                     <select
                         aria-label="Title color"
-                        value={translation.titleColor}
-                        onChange={(event) =>
-                            updateTranslation(translation.id, {
-                              titleColor: event.target.value,
-                            })
-                        }
+                        value={selectionColors[`title-${translation.id}`] ?? translation.titleColor}
+                        onChange={(event) => {
+                          const chosenColor = event.target.value
+                          setSelectionColors((current) => ({ ...current, [`title-${translation.id}`]: chosenColor }))
+                          const applied = applyColorToSelection(
+                              `title-${translation.id}`, translation.title, chosenColor, translation.titleColorRanges,
+                              (titleColorRanges) => updateTranslation(translation.id, { titleColorRanges }),
+                          )
+                          if (!applied) updateTranslation(translation.id, { titleColor: chosenColor })
+                        }}
                     >
                       {colors.map((color) => (
                           <option key={color.code} value={color.code}>
@@ -415,14 +502,11 @@ function App() {
                     </select>
                   </div>
                   <div className="minecraft-preview">
-                <span
-                    style={{
-                      color: colorHex[translation.titleColor],
-                    }}
-                >
-                  {translation.title || 'Your title preview'}
-                </span>
+                    {translation.title
+                        ? renderTextWithRanges(translation.title, translation.titleColor, translation.titleColorRanges)
+                        : <span style={{ color: colorHex[translation.titleColor] }}>Your title preview</span>}
                   </div>
+                  <p className="format-hint">Select text, then choose a color. Formatting stays invisible while you edit.</p>
                 </div>
 
                 <div className="extras-heading">
@@ -435,22 +519,30 @@ function App() {
                 {translation.extraLines.map((line) => (
                     <div className="extra-line" key={line.id}>
                       <input
+                          ref={(element) => { textInputRefs.current[`line-${line.id}`] = element }}
                           value={line.text}
-                          onChange={(event) =>
-                              updateExtraLine(translation, line.id, {
-                                text: event.target.value,
-                              })
-                          }
+                          onSelect={(event) => rememberSelection(`line-${line.id}`, event.currentTarget)}
+                          onClick={(event) => rememberSelection(`line-${line.id}`, event.currentTarget)}
+                          onKeyUp={(event) => rememberSelection(`line-${line.id}`, event.currentTarget)}
+                          onChange={(event) => {
+                            const newText = event.target.value
+                            updateExtraLine(translation, line.id, { text: newText, colorRanges: adjustRangesForEdit(line.text, newText, line.colorRanges) })
+                            rememberSelection(`line-${line.id}`, event.currentTarget)
+                          }}
                           placeholder="Makes you stronger"
                       />
                       <select
                           aria-label="Text color"
-                          value={line.color}
-                          onChange={(event) =>
-                              updateExtraLine(translation, line.id, {
-                                color: event.target.value,
-                              })
-                          }
+                          value={selectionColors[`line-${line.id}`] ?? line.color}
+                          onChange={(event) => {
+                            const chosenColor = event.target.value
+                            setSelectionColors((current) => ({ ...current, [`line-${line.id}`]: chosenColor }))
+                            const applied = applyColorToSelection(
+                                `line-${line.id}`, line.text, chosenColor, line.colorRanges,
+                                (colorRanges) => updateExtraLine(translation, line.id, { colorRanges }),
+                            )
+                            if (!applied) updateExtraLine(translation, line.id, { color: chosenColor })
+                          }}
                       >
                         {colors.map((color) => (
                             <option key={color.code} value={color.code}>
@@ -497,16 +589,11 @@ function App() {
                         ×
                       </button>
                       <div className="minecraft-preview extra-preview">
-                  <span
-                      style={{
-                        color: colorHex[line.color],
-                        fontWeight: line.bold ? 'bold' : 'normal',
-                        fontStyle: line.italic ? 'italic' : 'normal',
-                      }}
-                  >
-                    {line.text || 'Your text preview'}
-                  </span>
+                        {line.text
+                            ? renderTextWithRanges(line.text, line.color, line.colorRanges, line.bold, line.italic)
+                            : <span style={{ color: colorHex[line.color], fontWeight: line.bold ? 'bold' : 'normal', fontStyle: line.italic ? 'italic' : 'normal' }}>Your text preview</span>}
                       </div>
+                      <p className="format-hint extra-hint">Select text, then choose a color. Formatting stays invisible while you edit.</p>
                     </div>
                 ))}
 
@@ -533,19 +620,14 @@ function App() {
                     <span>{translation.key || 'your.translation.key'}</span>
                     <span>=</span>
                     <span>
-                  {formatText(translation.title, translation.titleColor)}
+                  {buildTextWithRanges(translation.title, translation.titleColor, translation.titleColorRanges)}
                 </span>
                     {translation.extraLines
                         .filter((line) => line.text.length > 0)
                         .map((line) => (
                             <span key={line.id}>
                       {'\\n'}
-                              {formatText(
-                                  line.text,
-                                  line.color,
-                                  line.bold,
-                                  line.italic,
-                              )}
+                              {buildTextWithRanges(line.text, line.color, line.colorRanges, line.bold, line.italic)}
                     </span>
                         ))}
                   </code>
