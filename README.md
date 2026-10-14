@@ -1,75 +1,79 @@
-# React + TypeScript + Vite
+# Lang Builder
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A browser-based editor for creating and editing Minecraft Bedrock `.lang` files, with a simple interface for managing translation entries and Minecraft text formatting.
 
-Currently, two official plugins are available:
+**[Try Lang Builder](https://ph4nt0m37x.github.io/minecraft-lang-editor/)**
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Features
 
-## React Compiler
+- **Import `.lang` files** — Load an existing language file and automatically populate the editor.
+- **Edit translations** — Manage translation keys, titles, comments, and additional text.
+- **Minecraft formatting** — Apply color codes, bold, and italic formatting without manually writing formatting codes.
+- **Live previews** — Preview text styling while editing.
+- **Export `.lang` files** — Generate and download your edited language file.
+- **Custom filenames** — Choose the filename for your exported language file.
+- **Client-side processing** — Files are processed locally in your browser; no backend or account is required.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Getting Started
 
-## Expanding the ESLint configuration
+### Use the online editor
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+Visit [Lang Builder](https://ph4nt0m37x.github.io/minecraft-lang-editor/) to start creating or editing language files.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### Run locally
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+Requirements:
+- [Node.js](https://nodejs.org/)
+- npm
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+1. Clone the repository:
 
-```
+   ```bash
+   git clone https://github.com/ph4nt0m37x/minecraft-lang-editor.git
+   ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+2. Enter the project directory:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+   ```bash
+   cd minecraft-lang-editor
+   ```
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+3. Install dependencies:
 
-```
+   ```bash
+   npm install
+   ```
+
+4. Start the development server:
+
+   ```bash
+   npm run dev
+   ```
+
+5. Open the local URL displayed in your terminal, usually `http://localhost:5173/`.
+
+## How to Use
+
+1. Open the editor.
+2. Import an existing `.lang` file or start with a new translation.
+3. Enter a translation key and its text.
+4. Add extra text lines and customize their formatting.
+5. Preview your changes.
+6. Choose an output filename and generate your `.lang` file.
+
+## Built With
+
+- [React](https://react.dev/)
+- [TypeScript](https://www.typescriptlang.org/)
+- [Vite](https://vite.dev/)
+- CSS
+- GitHub Actions
+- GitHub Pages
+
+## CI/CD
+
+The project uses GitHub Actions to build the application and deploy it to GitHub Pages when changes are pushed to the `main` branch. The workflow can also be triggered manually.
+
+## Disclaimer
+
+Lang Builder is an independent community project and is not affiliated with, endorsed by, or associated with Mojang Studios or Microsoft. Minecraft is a trademark of Microsoft Corporation.
